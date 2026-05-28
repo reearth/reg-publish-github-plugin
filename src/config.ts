@@ -1,0 +1,139 @@
+import { execSync } from "child_process";
+
+import type { PluginLogger } from "reg-suit-interface";
+
+/**
+ * User-facing plugin configuration, as written into `regconfig.json` under
+ * `plugins["reg-publish-github-releases-plugin"]`.
+ */
+export interface PluginConfig {
+  /** "owner/repo" of the storage repo. Default: inferred from the `origin` git remote. */
+  repository?: string;
+  /** Tag of the fixed prerelease that holds the snapshot assets. Default: "reg-snapshots". */
+  tagName?: string;
+  /** Token with `contents: write` on the storage repo. Default: `process.env.GITHUB_TOKEN`. */
+  token?: string;
+  /** Optional namespace prepended to each asset name (e.g. "ios-"). */
+  pathPrefix?: string;
+  /** Delete snapshot assets older than this many days. Default: 30. */
+  retentionDays?: number;
+  /** Optional secondary cap: keep at most this many most-recent snapshot assets. */
+  retentionCount?: number;
+}
+
+/** Fully resolved config, with every value concrete and validated. */
+export interface ResolvedConfig {
+  owner: string;
+  repo: string;
+  tagName: string;
+  token: string;
+  pathPrefix: string;
+  retentionDays: number;
+  retentionCount?: number;
+}
+
+export const DEFAULT_TAG_NAME = "reg-snapshots";
+export const DEFAULT_RETENTION_DAYS = 30;
+
+/**
+ * Parse an "owner/repo" string or a git remote URL into its parts.
+ * Supports the common forms:
+ *   - owner/repo
+ *   - git@github.com:owner/repo.git
+ *   - https://github.com/owner/repo(.git)
+ *   - ssh://git@github.com/owner/repo.git
+ */
+export function parseRepository(input: string): { owner: string; repo: string } | null {
+  const trimmed = input.trim().replace(/\.git$/, "");
+  // Bare "owner/repo".
+  const bare = /^([^/\s:]+)\/([^/\s:]+)$/.exec(trimmed);
+  if (bare) {
+    return { owner: bare[1], repo: bare[2] };
+  }
+  // scp-like or URL form: capture the last two path-ish segments.
+  const m = /[/:]([^/\s:]+)\/([^/\s:]+)$/.exec(trimmed);
+  if (m) {
+    return { owner: m[1], repo: m[2] };
+  }
+  return null;
+}
+
+function inferRepositoryFromGit(logger?: PluginLogger): string | undefined {
+  try {
+    return execSync("git remote get-url origin", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    logger?.warn("Could not infer repository from `git remote get-url origin`.");
+    return undefined;
+  }
+}
+
+/**
+ * Resolve a partial {@link PluginConfig} into a concrete {@link ResolvedConfig},
+ * filling in defaults and validating that the required values are present.
+ * Throws with an actionable message when something essential is missing.
+ */
+export function resolveConfig(config: PluginConfig, logger?: PluginLogger): ResolvedConfig {
+  const repository = config.repository ?? inferRepositoryFromGit(logger);
+  if (!repository) {
+    throw new Error(
+      "reg-publish-github-releases-plugin: `repository` is not set and could not be inferred from the git remote. " +
+        'Set `repository: "owner/repo"` in regconfig.json.',
+    );
+  }
+
+  const parsed = parseRepository(repository);
+  if (!parsed) {
+    throw new Error(
+      `reg-publish-github-releases-plugin: could not parse repository "${repository}". Expected "owner/repo".`,
+    );
+  }
+
+  const token = config.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+  if (!token) {
+    throw new Error(
+      "reg-publish-github-releases-plugin: no token available. Set `token` in regconfig.json or the " +
+        "GITHUB_TOKEN environment variable (needs `contents: write` on the storage repo).",
+    );
+  }
+
+  const retentionDays = config.retentionDays ?? DEFAULT_RETENTION_DAYS;
+  if (!(retentionDays > 0)) {
+    throw new Error(
+      `reg-publish-github-releases-plugin: retentionDays must be a positive number, got ${config.retentionDays}.`,
+    );
+  }
+
+  if (config.retentionCount !== undefined && !(config.retentionCount > 0)) {
+    throw new Error(
+      `reg-publish-github-releases-plugin: retentionCount must be a positive number, got ${config.retentionCount}.`,
+    );
+  }
+
+  return {
+    owner: parsed.owner,
+    repo: parsed.repo,
+    tagName: config.tagName ?? DEFAULT_TAG_NAME,
+    token,
+    pathPrefix: config.pathPrefix ?? "",
+    retentionDays,
+    retentionCount: config.retentionCount,
+  };
+}
+
+/** Build the asset name for a snapshot key: `${pathPrefix}${key}.zip`. */
+export function assetNameForKey(key: string, pathPrefix = ""): string {
+  return `${pathPrefix}${key}.zip`;
+}
+
+/**
+ * Reverse of {@link assetNameForKey}: extract the snapshot key from an asset
+ * name, or `null` if the name is not one of our snapshot assets.
+ */
+export function keyFromAssetName(name: string, pathPrefix = ""): string | null {
+  if (!name.endsWith(".zip")) return null;
+  if (pathPrefix && !name.startsWith(pathPrefix)) return null;
+  return name.slice(pathPrefix.length, name.length - ".zip".length);
+}
