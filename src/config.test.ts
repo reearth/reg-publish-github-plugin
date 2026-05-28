@@ -45,13 +45,17 @@ describe("asset name helpers", () => {
 });
 
 describe("resolveConfig", () => {
-  const OLD_ENV = process.env.GITHUB_TOKEN;
+  const OLD_TOKEN = process.env.GITHUB_TOKEN;
+  const OLD_ACTOR = process.env.GITHUB_ACTOR;
   beforeEach(() => {
     process.env.GITHUB_TOKEN = "test-token";
+    delete process.env.GITHUB_ACTOR;
   });
   afterEach(() => {
-    if (OLD_ENV === undefined) delete process.env.GITHUB_TOKEN;
-    else process.env.GITHUB_TOKEN = OLD_ENV;
+    if (OLD_TOKEN === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = OLD_TOKEN;
+    if (OLD_ACTOR === undefined) delete process.env.GITHUB_ACTOR;
+    else process.env.GITHUB_ACTOR = OLD_ACTOR;
   });
 
   it("applies defaults", () => {
@@ -71,16 +75,10 @@ describe("resolveConfig", () => {
   });
 
   it("resolves the ghcr backend with registry and username defaults", () => {
-    const prevActor = process.env.GITHUB_ACTOR;
-    delete process.env.GITHUB_ACTOR;
-    try {
-      const resolved = resolveConfig({ backend: "ghcr", repository: "acme/widgets" });
-      expect(resolved.backend).toBe("ghcr");
-      expect(resolved.registry).toBe("ghcr.io");
-      expect(resolved.username).toBe("acme"); // falls back to owner
-    } finally {
-      if (prevActor !== undefined) process.env.GITHUB_ACTOR = prevActor;
-    }
+    const resolved = resolveConfig({ backend: "ghcr", repository: "acme/widgets" });
+    expect(resolved.backend).toBe("ghcr");
+    expect(resolved.registry).toBe("ghcr.io");
+    expect(resolved.username).toBe("acme"); // falls back to owner
   });
 
   it("honours an explicit registry and username for ghcr", () => {
