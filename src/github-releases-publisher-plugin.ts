@@ -63,7 +63,7 @@ export class GitHubReleasesPublisherPlugin implements PublisherPlugin<PluginConf
     this.logger.info(`Uploading snapshot ${this.logger.colors.magenta(name)} (${buffer.length} bytes).`);
     await this.client.uploadAsset(release.id, name, buffer);
 
-    await this.runGc(release.id);
+    await this.runGc(release.id, name);
 
     return { reportUrl: undefined };
   }
@@ -97,10 +97,11 @@ export class GitHubReleasesPublisherPlugin implements PublisherPlugin<PluginConf
 
   /**
    * Delete snapshot assets older than the retention window, plus any beyond the
-   * optional count cap. Runs *after* a successful upload, so the just-published
-   * set is never collected.
+   * optional count cap. The asset just uploaded in this run (`protectName`) is
+   * always kept, so the freshly published set is never collected — even with a
+   * tiny retention window or clock skew between upload and this listing.
    */
-  private async runGc(releaseId: number): Promise<void> {
+  private async runGc(releaseId: number, protectName: string): Promise<void> {
     const assets = await this.client.listAssets(releaseId);
     const snapshots = assets
       .filter(a => keyFromAssetName(a.name, this.config.pathPrefix) !== null)
@@ -119,6 +120,10 @@ export class GitHubReleasesPublisherPlugin implements PublisherPlugin<PluginConf
         toDelete.set(asset.id, asset);
       }
     }
+
+    // Never collect the set we just uploaded, regardless of window or clock skew.
+    const protectedAsset = snapshots.find(a => a.name === protectName);
+    if (protectedAsset) toDelete.delete(protectedAsset.id);
 
     if (toDelete.size === 0) return;
 
