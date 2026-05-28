@@ -28,7 +28,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  *     referenced blob into `workingDirs.expectedDir` using its path annotation.
  */
 export class GhcrPublisherPlugin implements PublisherPlugin<PluginConfig> {
-  name = "reg-publish-github-releases-plugin";
+  name = "reg-publish-github-plugin";
 
   private noEmit = false;
   private logger!: PluginLogger;

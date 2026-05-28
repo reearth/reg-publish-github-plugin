@@ -66,7 +66,7 @@ export class OctokitClient {
         prerelease: true,
         body:
           "Storage for reg-suit visual-regression snapshots. " +
-          "Managed by reg-publish-github-releases-plugin — do not edit or delete.",
+          "Managed by reg-publish-github-plugin — do not edit or delete.",
       });
       return data;
     } catch (err) {

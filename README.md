@@ -1,4 +1,4 @@
-# reg-publish-github-releases-plugin
+# reg-publish-github-plugin
 
 A [reg-suit](https://github.com/reg-viz/reg-suit) **publisher plugin** that stores visual-regression
 snapshots on GitHub itself — no external cloud account (S3/GCS) and no binaries committed to git history.
@@ -43,7 +43,7 @@ files unchanged between commits are stored once and shared — storage grows wit
 ## Install
 
 ```bash
-npm install --save-dev reg-publish-github-releases-plugin
+npm install --save-dev reg-publish-github-plugin
 ```
 
 ## Configure
@@ -51,7 +51,7 @@ npm install --save-dev reg-publish-github-releases-plugin
 Run the interactive setup:
 
 ```bash
-npx reg-suit prepare -p github-releases
+npx reg-suit prepare -p github
 ```
 
 …or add the block to `regconfig.json` manually.
@@ -65,7 +65,7 @@ Releases backend (default):
     "actualDir": "__screenshots__"
   },
   "plugins": {
-    "reg-publish-github-releases-plugin": {
+    "reg-publish-github-plugin": {
       "backend": "releases",        // default; can be omitted
       "repository": "owner/repo",   // optional; inferred from the git `origin` remote
       "tagName": "reg-snapshots",   // fixed release tag (default)
@@ -82,7 +82,7 @@ GHCR backend (switch with `"backend": "ghcr"`):
 ```jsonc
 {
   "plugins": {
-    "reg-publish-github-releases-plugin": {
+    "reg-publish-github-plugin": {
       "backend": "ghcr",
       "repository": "owner/repo",   // optional; inferred from the git `origin` remote
       "tagName": "reg-snapshots",   // image name → ghcr.io/owner/repo/reg-snapshots

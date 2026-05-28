@@ -21,7 +21,7 @@ function backendOf(config: { backend?: Backend } | undefined): Backend {
  * `backend` config option, resolved at `init` time.
  */
 export class DispatchingPublisher implements PublisherPlugin<PluginConfig> {
-  name = "reg-publish-github-releases-plugin";
+  name = "reg-publish-github-plugin";
 
   private delegate!: PublisherPlugin<PluginConfig>;
 

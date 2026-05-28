@@ -4,7 +4,7 @@ import type { PluginLogger } from "reg-suit-interface";
 
 /**
  * User-facing plugin configuration, as written into `regconfig.json` under
- * `plugins["reg-publish-github-releases-plugin"]`.
+ * `plugins["reg-publish-github-plugin"]`.
  */
 /** Storage backend for snapshots. */
 export type Backend = "releases" | "ghcr";
@@ -101,14 +101,14 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
   const backend = config.backend ?? DEFAULT_BACKEND;
   if (backend !== "releases" && backend !== "ghcr") {
     throw new Error(
-      `reg-publish-github-releases-plugin: backend must be "releases" or "ghcr", got "${backend}".`,
+      `reg-publish-github-plugin: backend must be "releases" or "ghcr", got "${backend}".`,
     );
   }
 
   const repository = config.repository ?? inferRepositoryFromGit(logger);
   if (!repository) {
     throw new Error(
-      "reg-publish-github-releases-plugin: `repository` is not set and could not be inferred from the git remote. " +
+      "reg-publish-github-plugin: `repository` is not set and could not be inferred from the git remote. " +
         'Set `repository: "owner/repo"` in regconfig.json.',
     );
   }
@@ -116,14 +116,14 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
   const parsed = parseRepository(repository);
   if (!parsed) {
     throw new Error(
-      `reg-publish-github-releases-plugin: could not parse repository "${repository}". Expected "owner/repo".`,
+      `reg-publish-github-plugin: could not parse repository "${repository}". Expected "owner/repo".`,
     );
   }
 
   const token = config.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
   if (!token) {
     throw new Error(
-      "reg-publish-github-releases-plugin: no token available. Set `token` in regconfig.json or the " +
+      "reg-publish-github-plugin: no token available. Set `token` in regconfig.json or the " +
         "GITHUB_TOKEN environment variable (needs `contents: write` on the storage repo).",
     );
   }
@@ -131,13 +131,13 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
   const retentionDays = config.retentionDays ?? DEFAULT_RETENTION_DAYS;
   if (!(retentionDays > 0)) {
     throw new Error(
-      `reg-publish-github-releases-plugin: retentionDays must be a positive number, got ${config.retentionDays}.`,
+      `reg-publish-github-plugin: retentionDays must be a positive number, got ${config.retentionDays}.`,
     );
   }
 
   if (config.retentionCount !== undefined && !(config.retentionCount > 0)) {
     throw new Error(
-      `reg-publish-github-releases-plugin: retentionCount must be a positive number, got ${config.retentionCount}.`,
+      `reg-publish-github-plugin: retentionCount must be a positive number, got ${config.retentionCount}.`,
     );
   }
 

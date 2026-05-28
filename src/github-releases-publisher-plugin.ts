@@ -25,7 +25,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  *     become the *expected* snapshots of the current one.
  */
 export class GitHubReleasesPublisherPlugin implements PublisherPlugin<PluginConfig> {
-  name = "reg-publish-github-releases-plugin";
+  name = "reg-publish-github-plugin";
 
   private noEmit = false;
   private logger!: PluginLogger;
