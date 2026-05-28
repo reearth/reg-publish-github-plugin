@@ -57,14 +57,44 @@ describe("resolveConfig", () => {
   it("applies defaults", () => {
     const resolved = resolveConfig({ repository: "owner/repo" });
     expect(resolved).toMatchObject({
+      backend: "releases",
       owner: "owner",
       repo: "repo",
       tagName: DEFAULT_TAG_NAME,
       token: "test-token",
       pathPrefix: "",
       retentionDays: DEFAULT_RETENTION_DAYS,
+      registry: "ghcr.io",
+      username: "owner",
     });
     expect(resolved.retentionCount).toBeUndefined();
+  });
+
+  it("resolves the ghcr backend with registry and username defaults", () => {
+    const prevActor = process.env.GITHUB_ACTOR;
+    delete process.env.GITHUB_ACTOR;
+    try {
+      const resolved = resolveConfig({ backend: "ghcr", repository: "acme/widgets" });
+      expect(resolved.backend).toBe("ghcr");
+      expect(resolved.registry).toBe("ghcr.io");
+      expect(resolved.username).toBe("acme"); // falls back to owner
+    } finally {
+      if (prevActor !== undefined) process.env.GITHUB_ACTOR = prevActor;
+    }
+  });
+
+  it("honours an explicit registry and username for ghcr", () => {
+    const resolved = resolveConfig({
+      backend: "ghcr",
+      repository: "acme/widgets",
+      registry: "ghcr.example.com",
+      username: "ci-bot",
+    });
+    expect(resolved).toMatchObject({ backend: "ghcr", registry: "ghcr.example.com", username: "ci-bot" });
+  });
+
+  it("rejects an unknown backend", () => {
+    expect(() => resolveConfig({ repository: "o/r", backend: "s3" as never })).toThrow(/backend must be/);
   });
 
   it("honours explicit values", () => {
@@ -77,6 +107,7 @@ describe("resolveConfig", () => {
       retentionCount: 50,
     });
     expect(resolved).toEqual({
+      backend: "releases",
       owner: "o",
       repo: "r",
       tagName: "snaps",
@@ -84,6 +115,8 @@ describe("resolveConfig", () => {
       pathPrefix: "p-",
       retentionDays: 7,
       retentionCount: 50,
+      registry: "ghcr.io",
+      username: "o",
     });
   });
 

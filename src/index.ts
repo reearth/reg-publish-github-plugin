@@ -1,11 +1,10 @@
 import type { PublisherPluginFactory } from "reg-suit-interface";
 
-import { GitHubReleasesPreparer } from "./github-releases-preparer";
-import { GitHubReleasesPublisherPlugin } from "./github-releases-publisher-plugin";
+import { DispatchingPreparer, DispatchingPublisher } from "./dispatch";
 
 const factory: PublisherPluginFactory = () => ({
-  preparer: new GitHubReleasesPreparer(),
-  publisher: new GitHubReleasesPublisherPlugin(),
+  preparer: new DispatchingPreparer(),
+  publisher: new DispatchingPublisher(),
 });
 
 export = factory;

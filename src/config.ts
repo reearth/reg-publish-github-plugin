@@ -6,23 +6,41 @@ import type { PluginLogger } from "reg-suit-interface";
  * User-facing plugin configuration, as written into `regconfig.json` under
  * `plugins["reg-publish-github-releases-plugin"]`.
  */
+/** Storage backend for snapshots. */
+export type Backend = "releases" | "ghcr";
+
 export interface PluginConfig {
+  /**
+   * Storage backend. Default: "releases".
+   *   - "releases": one `<hash>.zip` asset on a fixed GitHub prerelease (needs `contents: write`).
+   *   - "ghcr": one OCI artifact tagged `<hash>` in GHCR, with layer-level dedup (needs `packages: write`).
+   */
+  backend?: Backend;
   /** "owner/repo" of the storage repo. Default: inferred from the `origin` git remote. */
   repository?: string;
-  /** Tag of the fixed prerelease that holds the snapshot assets. Default: "reg-snapshots". */
+  /**
+   * Releases backend: tag of the fixed prerelease holding the assets.
+   * GHCR backend: the image name appended to the repo path (`<registry>/<owner>/<repo>/<tagName>`).
+   * Default: "reg-snapshots".
+   */
   tagName?: string;
-  /** Token with `contents: write` on the storage repo. Default: `process.env.GITHUB_TOKEN`. */
+  /** Token with the required scope on the storage repo. Default: `process.env.GITHUB_TOKEN`. */
   token?: string;
-  /** Optional namespace prepended to each asset name (e.g. "ios-"). */
+  /** Optional namespace prepended to each asset name (Releases backend only, e.g. "ios-"). */
   pathPrefix?: string;
-  /** Delete snapshot assets older than this many days. Default: 30. */
+  /** Delete snapshots older than this many days. Default: 30. */
   retentionDays?: number;
-  /** Optional secondary cap: keep at most this many most-recent snapshot assets. */
+  /** Optional secondary cap: keep at most this many most-recent snapshots. */
   retentionCount?: number;
+  /** GHCR backend: container registry host. Default: "ghcr.io". */
+  registry?: string;
+  /** GHCR backend: username for registry auth. Default: `$GITHUB_ACTOR`, else the repo owner. */
+  username?: string;
 }
 
 /** Fully resolved config, with every value concrete and validated. */
 export interface ResolvedConfig {
+  backend: Backend;
   owner: string;
   repo: string;
   tagName: string;
@@ -30,10 +48,14 @@ export interface ResolvedConfig {
   pathPrefix: string;
   retentionDays: number;
   retentionCount?: number;
+  registry: string;
+  username: string;
 }
 
 export const DEFAULT_TAG_NAME = "reg-snapshots";
 export const DEFAULT_RETENTION_DAYS = 30;
+export const DEFAULT_BACKEND: Backend = "releases";
+export const DEFAULT_REGISTRY = "ghcr.io";
 
 /**
  * Parse an "owner/repo" string or a git remote URL into its parts.
@@ -76,6 +98,13 @@ function inferRepositoryFromGit(logger?: PluginLogger): string | undefined {
  * Throws with an actionable message when something essential is missing.
  */
 export function resolveConfig(config: PluginConfig, logger?: PluginLogger): ResolvedConfig {
+  const backend = config.backend ?? DEFAULT_BACKEND;
+  if (backend !== "releases" && backend !== "ghcr") {
+    throw new Error(
+      `reg-publish-github-releases-plugin: backend must be "releases" or "ghcr", got "${backend}".`,
+    );
+  }
+
   const repository = config.repository ?? inferRepositoryFromGit(logger);
   if (!repository) {
     throw new Error(
@@ -113,6 +142,7 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
   }
 
   return {
+    backend,
     owner: parsed.owner,
     repo: parsed.repo,
     tagName: config.tagName ?? DEFAULT_TAG_NAME,
@@ -120,6 +150,8 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
     pathPrefix: config.pathPrefix ?? "",
     retentionDays,
     retentionCount: config.retentionCount,
+    registry: config.registry ?? DEFAULT_REGISTRY,
+    username: config.username ?? process.env.GITHUB_ACTOR ?? parsed.owner,
   };
 }
 

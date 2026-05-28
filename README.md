@@ -1,10 +1,14 @@
 # reg-publish-github-releases-plugin
 
 A [reg-suit](https://github.com/reg-viz/reg-suit) **publisher plugin** that stores visual-regression
-snapshots as **GitHub Releases assets** — one `<commitHash>.zip` per snapshot set, on a single fixed
-prerelease.
+snapshots on GitHub itself — no external cloud account (S3/GCS) and no binaries committed to git history.
+Just a GitHub token. Pick one of two backends with a single config option:
 
-No external cloud account (S3/GCS) and no binaries committed to git history. Just a GitHub token.
+- **`releases`** (default) — one `<commitHash>.zip` per snapshot set, as assets on a fixed prerelease.
+  Simple; needs `contents: write`.
+- **`ghcr`** — one OCI artifact tagged `<commitHash>` in the GitHub Container Registry, with each file
+  stored as its own blob so **unchanged images dedup across commits**. Most storage-efficient; needs
+  `packages: write`.
 
 ## Why
 
@@ -15,15 +19,26 @@ publisher that avoids both external cloud accounts **and** git binary bloat.
 
 ## How it works
 
-reg-suit addresses snapshots by **commit hash**. This plugin keeps every snapshot set as one zip asset
-on a single, never-moving GitHub **prerelease**:
+reg-suit addresses snapshots by **commit hash**, and both backends preserve the same idea: the **actual**
+snapshots of the base commit become the **expected** snapshots of the current one.
+
+**Releases backend** keeps every snapshot set as one zip asset on a single, never-moving **prerelease**:
 
 - `publish(actualKey)` → zips the current snapshot directory and uploads it as `<actualKey>.zip`.
-- `fetch(expectedKey)` → downloads `<expectedKey>.zip` and unzips it into the *expected* directory, so
-  the **actual** snapshots of the base commit become the **expected** snapshots of the current one.
+- `fetch(expectedKey)` → downloads `<expectedKey>.zip` and unzips it into the *expected* directory.
 
 A prerelease (not a draft) is used because draft asset URLs require auth, which would break public
 `fetch`; the prerelease keeps assets downloadable while staying out of the "Latest release" badge.
+
+**GHCR backend** pushes each snapshot set as an OCI artifact to
+`ghcr.io/<owner>/<repo>/<tagName>:<commitHash>`. Each file becomes its own content-addressable blob, so
+files unchanged between commits are stored once and shared — storage grows with *changes*, not with
+*commits × images*.
+
+- `publish(actualKey)` → uploads each file's blob (skipping any the registry already has) and pushes a
+  manifest tagged `actualKey`.
+- `fetch(expectedKey)` → pulls the manifest tagged `expectedKey` and writes each blob into the *expected*
+  directory using its path annotation. A missing tag resolves to "all new" (never throws).
 
 ## Install
 
@@ -39,7 +54,9 @@ Run the interactive setup:
 npx reg-suit prepare -p github-releases
 ```
 
-…or add the block to `regconfig.json` manually:
+…or add the block to `regconfig.json` manually.
+
+Releases backend (default):
 
 ```jsonc
 {
@@ -49,6 +66,7 @@ npx reg-suit prepare -p github-releases
   },
   "plugins": {
     "reg-publish-github-releases-plugin": {
+      "backend": "releases",        // default; can be omitted
       "repository": "owner/repo",   // optional; inferred from the git `origin` remote
       "tagName": "reg-snapshots",   // fixed release tag (default)
       "pathPrefix": "",             // optional namespace prepended to asset names
@@ -59,49 +77,76 @@ npx reg-suit prepare -p github-releases
 }
 ```
 
+GHCR backend (switch with `"backend": "ghcr"`):
+
+```jsonc
+{
+  "plugins": {
+    "reg-publish-github-releases-plugin": {
+      "backend": "ghcr",
+      "repository": "owner/repo",   // optional; inferred from the git `origin` remote
+      "tagName": "reg-snapshots",   // image name → ghcr.io/owner/repo/reg-snapshots
+      "registry": "ghcr.io",        // default
+      "retentionDays": 30
+    }
+  }
+}
+```
+
 ### Options
 
-| Option           | Default                  | Description                                                              |
-| ---------------- | ------------------------ | ------------------------------------------------------------------------ |
-| `repository`     | inferred from git remote | `owner/repo` of the storage repo.                                        |
-| `tagName`        | `reg-snapshots`          | Tag of the fixed prerelease holding the assets.                          |
-| `token`          | `$GITHUB_TOKEN`          | Token with `contents: write` on the storage repo.                        |
-| `pathPrefix`     | `""`                     | Namespace prepended to each asset name (e.g. `ios-`).                    |
-| `retentionDays`  | `30`                     | Snapshots older than this are garbage-collected after each publish.      |
-| `retentionCount` | _none_                   | Optional secondary cap: keep at most N most-recent snapshots.            |
+| Option           | Default                  | Description                                                                       |
+| ---------------- | ------------------------ | -------------------------------------------------------------------------------- |
+| `backend`        | `releases`               | `releases` (zip assets) or `ghcr` (OCI artifacts with layer dedup).              |
+| `repository`     | inferred from git remote | `owner/repo` of the storage repo.                                                |
+| `tagName`        | `reg-snapshots`          | Releases: the fixed prerelease tag. GHCR: the image name in the repo path.        |
+| `token`          | `$GITHUB_TOKEN`          | Token with the required scope (see below).                                        |
+| `pathPrefix`     | `""`                     | Releases only: namespace prepended to each asset name (e.g. `ios-`).             |
+| `retentionDays`  | `30`                     | Snapshots older than this are garbage-collected after each publish.               |
+| `retentionCount` | _none_                   | Optional secondary cap: keep at most N most-recent snapshots.                     |
+| `registry`       | `ghcr.io`                | GHCR only: container registry host.                                              |
+| `username`       | `$GITHUB_ACTOR` / owner  | GHCR only: username for registry auth.                                            |
 
 The token is read from `regconfig.json` (`token`), else `$GITHUB_TOKEN`, else `$GH_TOKEN`.
 
 ## Authentication
 
-You need a token with `contents: write` on the storage repo.
+The required scope depends on the backend.
 
-- **Same repo** (snapshots stored in the repo under test) — GitHub Actions' built-in token works:
+- **Releases** → `contents: write` on the storage repo.
+- **GHCR** → `packages: write` (and `packages: delete`, i.e. a PAT with `delete:packages`, for retention).
 
-  ```yaml
-  permissions:
-    contents: write
-  steps:
-    - run: npx reg-suit run
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  ```
+In GitHub Actions, the built-in token works when the storage repo/package belongs to the same repo:
 
-- **Separate storage repo** — use a PAT / fine-grained token scoped to that repo.
+```yaml
+permissions:
+  contents: write   # releases backend
+  packages: write   # ghcr backend
+steps:
+  - run: npx reg-suit run
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+For a **separate** storage repo, use a PAT / fine-grained token scoped to that repo (or package).
 
 ## Retention
 
 reg-suit compares against the **base commit** (for a PR, the merge-base — often an older `main` commit),
 so a "keep only the latest" policy would break PR comparisons. Instead this plugin uses an **age-based
-window**: after each publish it deletes snapshot assets older than `retentionDays` (default 30). The
+window**: after each publish it deletes snapshots older than `retentionDays` (default 30). The
 just-published set is never collected (GC runs after upload). Set `retentionDays` comfortably longer than
 your expected PR lifetime — a long-lived PR whose base falls outside the window degrades to "all new".
 
+For the GHCR backend, retention deletes old **package versions**; GHCR then garbage-collects any blobs no
+longer referenced by a surviving version — so shared (unchanged) images stay as long as some kept version
+needs them. This step needs `delete:packages` and is best-effort (a missing scope only logs a warning).
+
 ## Reports
 
-GitHub Releases stores files but cannot serve a browsable HTML report, so this plugin (v1) stores
-**snapshots only** and returns no `reportUrl`. Pair it with
-[`reg-notify-github-plugin`](https://github.com/reg-viz/reg-suit) to post a PR comment.
+Neither backend can serve a browsable HTML report, so this plugin stores **snapshots only** and returns
+no `reportUrl`. Pair it with [`reg-notify-github-plugin`](https://github.com/reg-viz/reg-suit) to post a
+PR comment.
 
 ## Development
 
@@ -109,7 +154,8 @@ GitHub Releases stores files but cannot serve a browsable HTML report, so this p
 npm install
 npm run build      # compile to dist/
 npm test           # unit tests (vitest)
-npm run e2e        # round-trip test against a real repo (see e2e/script.ts for required env)
+npm run e2e        # releases round-trip test against a real repo (see e2e/script.ts for required env)
+npm run e2e:ghcr   # ghcr round-trip test; needs a token with packages:write (see e2e/ghcr.ts)
 ```
 
 ## License
