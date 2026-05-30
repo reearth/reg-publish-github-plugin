@@ -6,6 +6,8 @@ type Octokit = import("@octokit/rest", { with: { "resolution-mode": "import" } }
 export interface ReleaseAsset {
   id: number;
   name: string;
+  /** Optional free-form label; used to mark protected (pinned) snapshots. */
+  label: string | null;
   /** ISO 8601 timestamp. */
   created_at: string;
   browser_download_url: string;
@@ -93,13 +95,14 @@ export class OctokitClient {
     await octokit.repos.deleteReleaseAsset({ owner: this.owner, repo: this.repo, asset_id: assetId });
   }
 
-  async uploadAsset(releaseId: number, name: string, data: Buffer): Promise<ReleaseAsset> {
+  async uploadAsset(releaseId: number, name: string, data: Buffer, label?: string): Promise<ReleaseAsset> {
     const octokit = await this.getOctokit();
     const res = await octokit.repos.uploadReleaseAsset({
       owner: this.owner,
       repo: this.repo,
       release_id: releaseId,
       name,
+      label,
       // octokit's types want a string, but a Buffer is accepted at runtime.
       data: data as unknown as string,
       headers: {

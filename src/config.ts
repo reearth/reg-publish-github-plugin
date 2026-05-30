@@ -32,6 +32,15 @@ export interface PluginConfig {
   retentionDays?: number;
   /** Optional secondary cap: keep at most this many most-recent snapshots. */
   retentionCount?: number;
+  /**
+   * Releases backend: mark the snapshot published in this run as *protected*, so
+   * the `retentionCount` cap never evicts it. Use it to pin default-branch
+   * baselines while ephemeral PR snapshots churn within the cap. The age cap
+   * (`retentionDays`) still applies. Overridden by the `REG_PUBLISH_PROTECTED`
+   * env var when set (truthy: `1`/`true`/`yes`), which is the practical way to
+   * protect only default-branch runs from a single static config. Default: false.
+   */
+  protected?: boolean;
   /** GHCR backend: container registry host. Default: "ghcr.io". */
   registry?: string;
   /** GHCR backend: username for registry auth. Default: `$GITHUB_ACTOR`, else the repo owner. */
@@ -48,6 +57,7 @@ export interface ResolvedConfig {
   pathPrefix: string;
   retentionDays: number;
   retentionCount?: number;
+  protected: boolean;
   registry: string;
   username: string;
 }
@@ -56,6 +66,18 @@ export const DEFAULT_TAG_NAME = "reg-snapshots";
 export const DEFAULT_RETENTION_DAYS = 30;
 export const DEFAULT_BACKEND: Backend = "releases";
 export const DEFAULT_REGISTRY = "ghcr.io";
+
+/** Asset label marking a snapshot as protected (exempt from the count cap). */
+export const PROTECTED_LABEL = "protected";
+
+/**
+ * Parse a boolean-ish env var. Returns `undefined` when unset/empty so callers
+ * can fall back to config; `true` for `1`/`true`/`yes` (case-insensitive).
+ */
+export function parseBoolEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  return /^(1|true|yes)$/i.test(value.trim());
+}
 
 /**
  * Parse an "owner/repo" string or a git remote URL into its parts.
@@ -100,9 +122,7 @@ function inferRepositoryFromGit(logger?: PluginLogger): string | undefined {
 export function resolveConfig(config: PluginConfig, logger?: PluginLogger): ResolvedConfig {
   const backend = config.backend ?? DEFAULT_BACKEND;
   if (backend !== "releases" && backend !== "ghcr") {
-    throw new Error(
-      `reg-publish-github-plugin: backend must be "releases" or "ghcr", got "${backend}".`,
-    );
+    throw new Error(`reg-publish-github-plugin: backend must be "releases" or "ghcr", got "${backend}".`);
   }
 
   const repository = config.repository ?? inferRepositoryFromGit(logger);
@@ -115,9 +135,7 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
 
   const parsed = parseRepository(repository);
   if (!parsed) {
-    throw new Error(
-      `reg-publish-github-plugin: could not parse repository "${repository}". Expected "owner/repo".`,
-    );
+    throw new Error(`reg-publish-github-plugin: could not parse repository "${repository}". Expected "owner/repo".`);
   }
 
   const token = config.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
@@ -130,9 +148,7 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
 
   const retentionDays = config.retentionDays ?? DEFAULT_RETENTION_DAYS;
   if (!(retentionDays > 0)) {
-    throw new Error(
-      `reg-publish-github-plugin: retentionDays must be a positive number, got ${config.retentionDays}.`,
-    );
+    throw new Error(`reg-publish-github-plugin: retentionDays must be a positive number, got ${config.retentionDays}.`);
   }
 
   if (config.retentionCount !== undefined && !(config.retentionCount > 0)) {
@@ -140,6 +156,8 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
       `reg-publish-github-plugin: retentionCount must be a positive number, got ${config.retentionCount}.`,
     );
   }
+
+  const protectedSnapshot = parseBoolEnv(process.env.REG_PUBLISH_PROTECTED) ?? config.protected ?? false;
 
   return {
     backend,
@@ -150,6 +168,7 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
     pathPrefix: config.pathPrefix ?? "",
     retentionDays,
     retentionCount: config.retentionCount,
+    protected: protectedSnapshot,
     registry: config.registry ?? DEFAULT_REGISTRY,
     username: config.username ?? process.env.GITHUB_ACTOR ?? parsed.owner,
   };

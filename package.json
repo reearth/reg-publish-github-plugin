@@ -1,6 +1,6 @@
 {
   "name": "reg-publish-github-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "reg-suit publisher plugin that stores snapshots as GitHub Releases assets (one zip per commit hash).",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

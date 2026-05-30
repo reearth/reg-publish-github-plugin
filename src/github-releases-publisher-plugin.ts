@@ -8,11 +8,10 @@ import type {
   PluginLogger,
 } from "reg-suit-interface";
 
-import { assetNameForKey, keyFromAssetName, resolveConfig, type PluginConfig, type ResolvedConfig } from "./config";
-import { OctokitClient, type ReleaseAsset } from "./octokit-client";
+import { assetNameForKey, PROTECTED_LABEL, resolveConfig, type PluginConfig, type ResolvedConfig } from "./config";
+import { OctokitClient } from "./octokit-client";
+import { selectAssetsToDelete } from "./retention";
 import { unzipToDir, zipDir } from "./zip";
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Stores each snapshot set as a single `<commitHash>.zip` asset on a fixed
@@ -60,8 +59,12 @@ export class GitHubReleasesPublisherPlugin implements PublisherPlugin<PluginConf
       await this.client.deleteAsset(existing.id);
     }
 
-    this.logger.info(`Uploading snapshot ${this.logger.colors.magenta(name)} (${buffer.length} bytes).`);
-    await this.client.uploadAsset(release.id, name, buffer);
+    const label = this.config.protected ? PROTECTED_LABEL : undefined;
+    const protectedNote = label ? " (protected)" : "";
+    this.logger.info(
+      `Uploading snapshot ${this.logger.colors.magenta(name)} (${buffer.length} bytes)${protectedNote}.`,
+    );
+    await this.client.uploadAsset(release.id, name, buffer, label);
 
     await this.runGc(release.id, name);
 
@@ -96,39 +99,19 @@ export class GitHubReleasesPublisherPlugin implements PublisherPlugin<PluginConf
   }
 
   /**
-   * Delete snapshot assets older than the retention window, plus any beyond the
-   * optional count cap. The asset just uploaded in this run (`protectName`) is
-   * always kept, so the freshly published set is never collected — even with a
-   * tiny retention window or clock skew between upload and this listing.
+   * Garbage-collect snapshot assets per the retention policy (see
+   * {@link selectAssetsToDelete}). The asset just uploaded in this run
+   * (`protectName`) is always kept, even with a tiny retention window or clock
+   * skew between upload and this listing.
    */
   private async runGc(releaseId: number, protectName: string): Promise<void> {
     const assets = await this.client.listAssets(releaseId);
-    const snapshots = assets
-      .filter(a => keyFromAssetName(a.name, this.config.pathPrefix) !== null)
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)); // newest first
+    const toDelete = selectAssetsToDelete(assets, this.config, protectName, Date.now());
 
-    const cutoff = Date.now() - this.config.retentionDays * MS_PER_DAY;
-    const toDelete = new Map<number, ReleaseAsset>();
+    if (toDelete.length === 0) return;
 
-    for (const asset of snapshots) {
-      if (Date.parse(asset.created_at) < cutoff) {
-        toDelete.set(asset.id, asset);
-      }
-    }
-    if (this.config.retentionCount !== undefined) {
-      for (const asset of snapshots.slice(this.config.retentionCount)) {
-        toDelete.set(asset.id, asset);
-      }
-    }
-
-    // Never collect the set we just uploaded, regardless of window or clock skew.
-    const protectedAsset = snapshots.find(a => a.name === protectName);
-    if (protectedAsset) toDelete.delete(protectedAsset.id);
-
-    if (toDelete.size === 0) return;
-
-    this.logger.info(`Garbage-collecting ${toDelete.size} old snapshot asset(s).`);
-    for (const asset of toDelete.values()) {
+    this.logger.info(`Garbage-collecting ${toDelete.length} old snapshot asset(s).`);
+    for (const asset of toDelete) {
       this.logger.verbose(`Deleting ${asset.name} (created ${asset.created_at}).`);
       await this.client.deleteAsset(asset.id);
     }

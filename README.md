@@ -71,7 +71,8 @@ Releases backend (default):
       "tagName": "reg-snapshots",   // fixed release tag (default)
       "pathPrefix": "",             // optional namespace prepended to asset names
       "retentionDays": 30,          // delete snapshots older than this (default)
-      "retentionCount": 200         // optional cap on the number of snapshots kept
+      "retentionCount": 30,         // optional cap on non-protected snapshots (full zip each — keep modest)
+      "protected": false            // pin this run's snapshot (exempt from the count cap)
     }
   }
 }
@@ -103,7 +104,8 @@ GHCR backend (switch with `"backend": "ghcr"`):
 | `token`          | `$GITHUB_TOKEN`          | Token with the required scope (see below).                                        |
 | `pathPrefix`     | `""`                     | Releases only: namespace prepended to each asset name (e.g. `ios-`).             |
 | `retentionDays`  | `30`                     | Snapshots older than this are garbage-collected after each publish.               |
-| `retentionCount` | _none_                   | Optional secondary cap: keep at most N most-recent snapshots.                     |
+| `retentionCount` | _none_                   | Optional secondary cap: keep at most N most-recent **non-protected** snapshots.    |
+| `protected`      | `false`                  | Releases only: pin this run's snapshot so `retentionCount` never evicts it. Override per-run with the `REG_PUBLISH_PROTECTED` env var (`1`/`true`/`yes`). |
 | `registry`       | `ghcr.io`                | GHCR only: container registry host.                                              |
 | `username`       | `$GITHUB_ACTOR` / owner  | GHCR only: username for registry auth.                                            |
 
@@ -133,10 +135,42 @@ For a **separate** storage repo, use a PAT / fine-grained token scoped to that r
 ## Retention
 
 reg-suit compares against the **base commit** (for a PR, the merge-base — often an older `main` commit),
-so a "keep only the latest" policy would break PR comparisons. Instead this plugin uses an **age-based
-window**: after each publish it deletes snapshots older than `retentionDays` (default 30). The
-just-published set is never collected (GC runs after upload). Set `retentionDays` comfortably longer than
-your expected PR lifetime — a long-lived PR whose base falls outside the window degrades to "all new".
+so a naive "keep only the latest N" policy would break PR comparisons by evicting the very baseline a PR
+needs. The plugin therefore uses two caps:
+
+- **Age window** (`retentionDays`, default 30): after each publish it deletes snapshots older than the
+  window. Set this comfortably longer than your expected PR lifetime — a long-lived PR whose base falls
+  outside the window degrades to "all new".
+- **Count cap** (`retentionCount`, optional): keeps at most N most-recent snapshots — but only counts
+  **non-protected** ones, so a flood of PR snapshots can never push a baseline out of the window. The
+  releases backend stores a full zip per snapshot (no cross-snapshot dedup), so keep N modest (tens, not
+  hundreds); GHCR dedups shared layers and can afford a larger cap.
+
+The just-published set is never collected (GC runs after upload).
+
+### Pinning baselines (`protected`)
+
+reg-suit only ever notifies (PR comment / commit status) as part of a **publish**, so to keep that
+feedback you typically publish on every PR — but you don't want those ephemeral PR snapshots to either
+pile up or evict your `main` baselines under `retentionCount`. Mark default-branch publishes as
+**protected** and they're exempt from the count cap (the age window still applies). Drive it per-event
+with the `REG_PUBLISH_PROTECTED` env var so one static `regconfig.json` covers both:
+
+```yaml
+permissions:
+  contents: write
+steps:
+  - run: npx reg-suit run
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Pin snapshots published from the default branch; PR snapshots stay ephemeral.
+      REG_PUBLISH_PROTECTED: ${{ github.ref == 'refs/heads/main' }}
+```
+
+```jsonc
+// regconfig.json — cap ephemeral PR snapshots at 10; protected main baselines are never counted.
+"reg-publish-github-plugin": { "backend": "releases", "retentionCount": 10 }
+```
 
 For the GHCR backend, retention deletes old **package versions**; GHCR then garbage-collects any blobs no
 longer referenced by a surviving version — so shared (unchanged) images stay as long as some kept version

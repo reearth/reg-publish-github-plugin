@@ -5,6 +5,7 @@ import {
   DEFAULT_TAG_NAME,
   assetNameForKey,
   keyFromAssetName,
+  parseBoolEnv,
   parseRepository,
   resolveConfig,
 } from "./config";
@@ -47,15 +48,19 @@ describe("asset name helpers", () => {
 describe("resolveConfig", () => {
   const OLD_TOKEN = process.env.GITHUB_TOKEN;
   const OLD_ACTOR = process.env.GITHUB_ACTOR;
+  const OLD_PROTECTED = process.env.REG_PUBLISH_PROTECTED;
   beforeEach(() => {
     process.env.GITHUB_TOKEN = "test-token";
     delete process.env.GITHUB_ACTOR;
+    delete process.env.REG_PUBLISH_PROTECTED;
   });
   afterEach(() => {
     if (OLD_TOKEN === undefined) delete process.env.GITHUB_TOKEN;
     else process.env.GITHUB_TOKEN = OLD_TOKEN;
     if (OLD_ACTOR === undefined) delete process.env.GITHUB_ACTOR;
     else process.env.GITHUB_ACTOR = OLD_ACTOR;
+    if (OLD_PROTECTED === undefined) delete process.env.REG_PUBLISH_PROTECTED;
+    else process.env.REG_PUBLISH_PROTECTED = OLD_PROTECTED;
   });
 
   it("applies defaults", () => {
@@ -113,6 +118,7 @@ describe("resolveConfig", () => {
       pathPrefix: "p-",
       retentionDays: 7,
       retentionCount: 50,
+      protected: false,
       registry: "ghcr.io",
       username: "o",
     });
@@ -131,5 +137,47 @@ describe("resolveConfig", () => {
   it("rejects non-positive retention values", () => {
     expect(() => resolveConfig({ repository: "o/r", retentionDays: 0 })).toThrow(/retentionDays/);
     expect(() => resolveConfig({ repository: "o/r", retentionCount: -1 })).toThrow(/retentionCount/);
+  });
+
+  it("defaults protected to false", () => {
+    expect(resolveConfig({ repository: "o/r" }).protected).toBe(false);
+  });
+
+  it("honours protected from config", () => {
+    expect(resolveConfig({ repository: "o/r", protected: true }).protected).toBe(true);
+  });
+
+  it("lets REG_PUBLISH_PROTECTED override the config", () => {
+    process.env.REG_PUBLISH_PROTECTED = "true";
+    expect(resolveConfig({ repository: "o/r", protected: false }).protected).toBe(true);
+
+    process.env.REG_PUBLISH_PROTECTED = "false";
+    expect(resolveConfig({ repository: "o/r", protected: true }).protected).toBe(false);
+  });
+
+  it("falls back to config when REG_PUBLISH_PROTECTED is empty", () => {
+    process.env.REG_PUBLISH_PROTECTED = "";
+    expect(resolveConfig({ repository: "o/r", protected: true }).protected).toBe(true);
+  });
+});
+
+describe("parseBoolEnv", () => {
+  it.each([
+    ["1", true],
+    ["true", true],
+    ["TRUE", true],
+    ["yes", true],
+    ["0", false],
+    ["false", false],
+    ["no", false],
+    ["anything", false],
+  ])("parses %s", (input, expected) => {
+    expect(parseBoolEnv(input)).toBe(expected);
+  });
+
+  it("returns undefined for unset or empty", () => {
+    expect(parseBoolEnv(undefined)).toBeUndefined();
+    expect(parseBoolEnv("")).toBeUndefined();
+    expect(parseBoolEnv("   ")).toBeUndefined();
   });
 });
