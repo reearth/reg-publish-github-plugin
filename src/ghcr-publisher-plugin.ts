@@ -92,7 +92,9 @@ export class GhcrPublisherPlugin implements PublisherPlugin<PluginConfig> {
       return [];
     }
 
-    this.logger.info(`Fetching baseline snapshot ${this.logger.colors.magenta(key)} (${manifest.layers.length} file(s)).`);
+    this.logger.info(
+      `Fetching baseline snapshot ${this.logger.colors.magenta(key)} (${manifest.layers.length} file(s)).`,
+    );
     const out: { path: string; absPath: string }[] = [];
     for (const layer of manifest.layers) {
       const relPath = layer.annotations?.[TITLE_ANNOTATION];
@@ -113,7 +115,11 @@ export class GhcrPublisherPlugin implements PublisherPlugin<PluginConfig> {
    * garbage-collected by GHCR — that is the dedup payoff.
    */
   private async runGc(protectKey: string): Promise<void> {
-    const packages = new GhcrPackages(this.config.token, this.config.owner, `${this.config.repo}/${this.config.tagName}`);
+    const packages = new GhcrPackages(
+      this.config.token,
+      this.config.owner,
+      `${this.config.repo}/${this.config.tagName}`,
+    );
 
     let versions;
     try {

@@ -5,9 +5,7 @@ import { ARTIFACT_TYPE, MEDIA_EMPTY_CONFIG, MEDIA_MANIFEST, buildManifest, sha25
 describe("sha256", () => {
   it("matches the well-known empty-config digest", () => {
     // The OCI empty descriptor: sha256 of the two bytes "{}".
-    expect(sha256(Buffer.from("{}"))).toBe(
-      "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-    );
+    expect(sha256(Buffer.from("{}"))).toBe("sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
   });
 
   it("is stable and content-addressable", () => {
@@ -18,9 +16,7 @@ describe("sha256", () => {
 
 describe("buildManifest", () => {
   it("builds an OCI manifest with an empty config and the given layers", () => {
-    const layers = [
-      { mediaType: "application/octet-stream", digest: sha256(Buffer.from("a")), size: 1 },
-    ];
+    const layers = [{ mediaType: "application/octet-stream", digest: sha256(Buffer.from("a")), size: 1 }];
     const m = buildManifest(layers);
     expect(m.schemaVersion).toBe(2);
     expect(m.mediaType).toBe(MEDIA_MANIFEST);

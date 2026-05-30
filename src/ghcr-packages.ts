@@ -36,7 +36,11 @@ export class GhcrPackages {
     const common = { package_type: "container", package_name: this.packageName, per_page: 100 } as const;
 
     const raw = await firstOk(
-      () => octokit.paginate("GET /orgs/{org}/packages/{package_type}/{package_name}/versions", { ...common, org: this.owner }),
+      () =>
+        octokit.paginate("GET /orgs/{org}/packages/{package_type}/{package_name}/versions", {
+          ...common,
+          org: this.owner,
+        }),
       () =>
         octokit.paginate("GET /users/{username}/packages/{package_type}/{package_name}/versions", {
           ...common,
@@ -53,14 +57,25 @@ export class GhcrPackages {
 
   async deleteVersion(versionId: number): Promise<void> {
     const octokit = await this.getOctokit();
-    const common = { package_type: "container", package_name: this.packageName, package_version_id: versionId } as const;
+    const common = {
+      package_type: "container",
+      package_name: this.packageName,
+      package_version_id: versionId,
+    } as const;
     await firstOk(
-      () => octokit.request("DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}", { ...common, org: this.owner }),
       () =>
-        octokit.request("DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}", {
+        octokit.request("DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}", {
           ...common,
-          username: this.owner,
+          org: this.owner,
         }),
+      () =>
+        octokit.request(
+          "DELETE /users/{username}/packages/{package_type}/{package_name}/versions/{package_version_id}",
+          {
+            ...common,
+            username: this.owner,
+          },
+        ),
     );
   }
 }

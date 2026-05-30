@@ -123,10 +123,7 @@ async function main() {
     uploadedKeys.push(gcKey);
     await gcPlugin.publish(gcKey); // GC runs after upload; old `key` asset is now stale.
     const after = await client.listAssets(release!.id);
-    assert.ok(
-      !after.some(a => a.name === assetNameForKey(key)),
-      "the old asset should have been garbage-collected",
-    );
+    assert.ok(!after.some(a => a.name === assetNameForKey(key)), "the old asset should have been garbage-collected");
     assert.ok(
       after.some(a => a.name === assetNameForKey(gcKey)),
       "the just-published asset should survive GC",
