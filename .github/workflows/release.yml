@@ -1,0 +1,33 @@
+name: Release
+
+# Publishes to npm via Trusted Publishing (OIDC) — no NPM_TOKEN required.
+# Configure the trusted publisher on npmjs.com first: package
+# `reg-publish-github-plugin` → GitHub repo `reearth/reg-publish-github-plugin`,
+# workflow `release.yml`, environment `npm`.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # required for npm Trusted Publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # >= 22.14.0, required for OIDC publishing
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      # Trusted Publishing needs npm >= 11.5.1; Node's bundled npm may be older.
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm test
+      # No NODE_AUTH_TOKEN: npm uses OIDC and auto-generates provenance.
+      # `prepublishOnly` cleans and rebuilds dist before publishing.
+      - run: npm publish
