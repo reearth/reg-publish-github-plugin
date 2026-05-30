@@ -90,4 +90,51 @@ describe("selectAssetsToDelete", () => {
       expect(ids(deleted)).toEqual([1]); // protected but stale → collected by age
     });
   });
+
+  describe("protected count cap", () => {
+    const capped = { retentionDays: 3650, protectedRetentionCount: 2, pathPrefix: "" };
+
+    it("keeps the N most-recent protected snapshots", () => {
+      const assets = [
+        snap(1, 1, { protected: true }),
+        snap(2, 2, { protected: true }),
+        snap(3, 3, { protected: true }),
+        snap(4, 4, { protected: true }),
+      ];
+      const deleted = selectAssetsToDelete(assets, capped, "1.zip", NOW);
+      expect(ids(deleted)).toEqual([3, 4]); // keep newest 2 (1, 2)
+    });
+
+    it("does not touch ephemeral snapshots", () => {
+      const assets = [
+        snap(1, 1, { protected: true }),
+        snap(2, 2, { protected: true }),
+        snap(3, 3, { protected: true }),
+        snap(10, 5),
+        snap(11, 6),
+      ];
+      const deleted = selectAssetsToDelete(assets, capped, "1.zip", NOW);
+      expect(ids(deleted)).toEqual([3]); // only the oldest protected; ephemerals untouched
+    });
+
+    it("keeps the just-uploaded protected snapshot even past the cap", () => {
+      // Upload #4 (the oldest by age) this run: it must survive despite a cap of 2.
+      const assets = [
+        snap(1, 1, { protected: true }),
+        snap(2, 2, { protected: true }),
+        snap(3, 3, { protected: true }),
+        snap(4, 4, { protected: true }),
+      ];
+      const deleted = selectAssetsToDelete(assets, capped, "4.zip", NOW);
+      expect(ids(deleted)).toEqual([3]); // #4 protected from deletion; #3 still collected
+    });
+
+    it("caps both pools independently", () => {
+      const both = { retentionDays: 3650, retentionCount: 1, protectedRetentionCount: 1, pathPrefix: "" };
+      const assets = [snap(1, 1, { protected: true }), snap(2, 3, { protected: true }), snap(10, 2), snap(11, 4)];
+      const deleted = selectAssetsToDelete(assets, both, "1.zip", NOW);
+      // protected: keep newest 1 (#1) → drop #2; ephemeral: keep newest 1 (#10) → drop #11
+      expect(ids(deleted)).toEqual([2, 11]);
+    });
+  });
 });

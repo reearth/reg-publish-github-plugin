@@ -8,6 +8,8 @@ export interface RetentionPolicy {
   retentionDays: number;
   /** Optional cap on the ephemeral (non-protected) pool's size. */
   retentionCount?: number;
+  /** Optional cap on the protected pool's size. */
+  protectedRetentionCount?: number;
   /** Namespace prepended to asset names; used to tell snapshots from other assets. */
   pathPrefix: string;
 }
@@ -19,6 +21,9 @@ export interface RetentionPolicy {
  *   - **Count cap** (`retentionCount`) applies only to the *ephemeral* pool —
  *     snapshots without the {@link PROTECTED_LABEL} label — so pinned baselines
  *     are never evicted by a churn of PR snapshots.
+ *   - **Protected count cap** (`protectedRetentionCount`) bounds the protected
+ *     pool independently, keeping only its most-recent N so a busy default
+ *     branch does not pile baselines up to the age limit.
  *   - `protectName` (the asset just uploaded this run) is always kept, regardless
  *     of either cap or clock skew between the upload and this listing.
  *
@@ -47,6 +52,12 @@ export function selectAssetsToDelete(
   if (policy.retentionCount !== undefined) {
     const ephemeral = snapshots.filter(a => a.label !== PROTECTED_LABEL);
     for (const asset of ephemeral.slice(policy.retentionCount)) toDelete.set(asset.id, asset);
+  }
+
+  // Protected count cap: bound the protected pool to its most-recent N.
+  if (policy.protectedRetentionCount !== undefined) {
+    const protectedSnaps = snapshots.filter(a => a.label === PROTECTED_LABEL);
+    for (const asset of protectedSnaps.slice(policy.protectedRetentionCount)) toDelete.set(asset.id, asset);
   }
 
   // Never collect the set we just uploaded.

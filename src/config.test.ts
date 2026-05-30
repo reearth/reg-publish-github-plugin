@@ -137,6 +137,12 @@ describe("resolveConfig", () => {
   it("rejects non-positive retention values", () => {
     expect(() => resolveConfig({ repository: "o/r", retentionDays: 0 })).toThrow(/retentionDays/);
     expect(() => resolveConfig({ repository: "o/r", retentionCount: -1 })).toThrow(/retentionCount/);
+    expect(() => resolveConfig({ repository: "o/r", protectedRetentionCount: 0 })).toThrow(/protectedRetentionCount/);
+  });
+
+  it("passes protectedRetentionCount through", () => {
+    expect(resolveConfig({ repository: "o/r" }).protectedRetentionCount).toBeUndefined();
+    expect(resolveConfig({ repository: "o/r", protectedRetentionCount: 20 }).protectedRetentionCount).toBe(20);
   });
 
   it("defaults protected to false", () => {

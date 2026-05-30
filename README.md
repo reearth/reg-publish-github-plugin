@@ -72,6 +72,7 @@ Releases backend (default):
       "pathPrefix": "",             // optional namespace prepended to asset names
       "retentionDays": 30,          // delete snapshots older than this (default)
       "retentionCount": 30,         // optional cap on non-protected snapshots (full zip each — keep modest)
+      "protectedRetentionCount": 20,// optional cap on the protected (pinned) pool
       "protected": false            // pin this run's snapshot (exempt from the count cap)
     }
   }
@@ -105,6 +106,7 @@ GHCR backend (switch with `"backend": "ghcr"`):
 | `pathPrefix`     | `""`                     | Releases only: namespace prepended to each asset name (e.g. `ios-`).             |
 | `retentionDays`  | `30`                     | Snapshots older than this are garbage-collected after each publish.               |
 | `retentionCount` | _none_                   | Optional secondary cap: keep at most N most-recent **non-protected** snapshots.    |
+| `protectedRetentionCount` | _none_          | Optional cap on the **protected** pool: keep at most N most-recent pinned snapshots (else bounded only by `retentionDays`). |
 | `protected`      | `false`                  | Releases only: pin this run's snapshot so `retentionCount` never evicts it. Override per-run with the `REG_PUBLISH_PROTECTED` env var (`1`/`true`/`yes`). |
 | `registry`       | `ghcr.io`                | GHCR only: container registry host.                                              |
 | `username`       | `$GITHUB_ACTOR` / owner  | GHCR only: username for registry auth.                                            |
@@ -154,7 +156,12 @@ reg-suit only ever notifies (PR comment / commit status) as part of a **publish*
 feedback you typically publish on every PR — but you don't want those ephemeral PR snapshots to either
 pile up or evict your `main` baselines under `retentionCount`. Mark default-branch publishes as
 **protected** and they're exempt from the count cap (the age window still applies). Drive it per-event
-with the `REG_PUBLISH_PROTECTED` env var so one static `regconfig.json` covers both:
+with the `REG_PUBLISH_PROTECTED` env var so one static `regconfig.json` covers both.
+
+Protected snapshots are otherwise bounded only by `retentionDays`, so a busy default branch can pile them
+up within the window. Set `protectedRetentionCount` to also cap the protected pool to its most-recent N —
+enough to cover the baselines your open PRs are likely to branch from. Either way, the snapshot just
+published always survives.
 
 ```yaml
 permissions:

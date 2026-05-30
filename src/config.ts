@@ -30,8 +30,16 @@ export interface PluginConfig {
   pathPrefix?: string;
   /** Delete snapshots older than this many days. Default: 30. */
   retentionDays?: number;
-  /** Optional secondary cap: keep at most this many most-recent snapshots. */
+  /** Optional secondary cap: keep at most this many most-recent *non-protected* snapshots. */
   retentionCount?: number;
+  /**
+   * Optional cap on the *protected* pool: keep at most this many most-recent
+   * protected snapshots. Without it, protected snapshots are bounded only by
+   * `retentionDays`, so a busy default branch can pile them up; set this to keep
+   * only the recent baselines a PR is likely to branch from. The just-published
+   * snapshot always survives. Default: unbounded.
+   */
+  protectedRetentionCount?: number;
   /**
    * Releases backend: mark the snapshot published in this run as *protected*, so
    * the `retentionCount` cap never evicts it. Use it to pin default-branch
@@ -57,6 +65,7 @@ export interface ResolvedConfig {
   pathPrefix: string;
   retentionDays: number;
   retentionCount?: number;
+  protectedRetentionCount?: number;
   protected: boolean;
   registry: string;
   username: string;
@@ -157,6 +166,12 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
     );
   }
 
+  if (config.protectedRetentionCount !== undefined && !(config.protectedRetentionCount > 0)) {
+    throw new Error(
+      `reg-publish-github-plugin: protectedRetentionCount must be a positive number, got ${config.protectedRetentionCount}.`,
+    );
+  }
+
   const protectedSnapshot = parseBoolEnv(process.env.REG_PUBLISH_PROTECTED) ?? config.protected ?? false;
 
   return {
@@ -168,6 +183,7 @@ export function resolveConfig(config: PluginConfig, logger?: PluginLogger): Reso
     pathPrefix: config.pathPrefix ?? "",
     retentionDays,
     retentionCount: config.retentionCount,
+    protectedRetentionCount: config.protectedRetentionCount,
     protected: protectedSnapshot,
     registry: config.registry ?? DEFAULT_REGISTRY,
     username: config.username ?? process.env.GITHUB_ACTOR ?? parsed.owner,
