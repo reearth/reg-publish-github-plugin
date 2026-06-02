@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: reg-publish-github-plugin
+  namespace: reearth
+  description: A reg-suit plugin to store visual regression snapshots as GitHub Releases
+    assets
+  annotations:
+    github.com/project-slug: reearth/reg-publish-github-plugin
+  links:
+  - url: https://github.com/reearth/reg-publish-github-plugin
+    title: GitHub
+    icon: github
+  tags:
+  - typescript
+spec:
+  type: service
+  lifecycle: production
+  owner: reearth/sre
